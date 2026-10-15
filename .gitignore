@@ -1,0 +1,4 @@
+.build/
+.swiftpm/
+Examples/AtriyaDemoApp/*.xcodeproj
+Examples/AtriyaDemoApp/Generated/

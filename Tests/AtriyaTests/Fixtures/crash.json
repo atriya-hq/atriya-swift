@@ -1,0 +1,62 @@
+{
+  "version": "1.0.0",
+  "callStackTree": {
+    "callStackPerThread": true,
+    "callStacks": [
+      {
+        "threadAttributed": false,
+        "callStackRootFrames": [
+          {
+            "binaryUUID": "70B89F27-1634-3580-A695-57CDB41D7743",
+            "offsetIntoBinaryTextSegment": 123456,
+            "sampleCount": 1,
+            "binaryName": "libsystem_kernel.dylib",
+            "address": 7020146012
+          }
+        ]
+      },
+      {
+        "threadAttributed": true,
+        "callStackRootFrames": [
+          {
+            "binaryUUID": "9E8D8DE8-794B-3F11-9C1C-4D3C1B2F8E10",
+            "offsetIntoBinaryTextSegment": 1715004,
+            "sampleCount": 1,
+            "binaryName": "SimpleTime",
+            "address": 4302405948,
+            "subFrames": [
+              {
+                "binaryUUID": "B5F3A6C2-6C1D-3D8E-9F4B-2A7E5C1D9B03",
+                "offsetIntoBinaryTextSegment": 98765,
+                "sampleCount": 1,
+                "binaryName": "SwiftUI",
+                "address": 7000098765,
+                "subFrames": [
+                  {
+                    "binaryUUID": "0C7A1E55-4B8F-3E62-A9D1-7F3B2C4E6A18",
+                    "offsetIntoBinaryTextSegment": 4096,
+                    "sampleCount": 1,
+                    "binaryName": "UIKitCore",
+                    "address": 7100004096
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "diagnosticMetaData": {
+    "appBuildVersion": "12",
+    "appVersion": "1.4",
+    "regionFormat": "DE",
+    "exceptionType": 1,
+    "osVersion": "iPhone OS 18.6 (22G86)",
+    "deviceType": "iPhone15,3",
+    "signal": 11,
+    "exceptionCode": 0,
+    "platformArchitecture": "arm64e",
+    "virtualMemoryRegionInfo": "0 is not in any region."
+  }
+}

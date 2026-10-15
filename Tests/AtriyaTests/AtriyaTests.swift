@@ -1,0 +1,229 @@
+import Foundation
+import Testing
+@testable import Atriya
+
+extension DeviceContext {
+    static let test = DeviceContext(
+        os: "iOS",
+        osVersion: "18.6",
+        deviceType: "mobile",
+        deviceModel: "iPhone15,3",
+        appVersion: "1.4 (12)",
+        sdk: "atriya-swift/test"
+    )
+}
+
+final class MockTransport: EventTransport, @unchecked Sendable {
+    private let lock = NSLock()
+    private var results: [DeliveryResult]
+    private let fallback: DeliveryResult
+    private var sent: [WireBatch] = []
+
+    init(results: [DeliveryResult] = [], fallback: DeliveryResult = .delivered) {
+        self.results = results
+        self.fallback = fallback
+    }
+
+    var batchSizes: [Int] { lock.withLock { sent.map(\.events.count) } }
+
+    func send(_ batch: WireBatch) async -> DeliveryResult {
+        lock.withLock {
+            sent.append(batch)
+            return results.isEmpty ? fallback : results.removeFirst()
+        }
+    }
+
+    func identify(_ payload: IdentifyPayload) async -> DeliveryResult { .delivered }
+}
+
+private func event(_ name: String, at date: Date = Date()) -> QueuedEvent {
+    QueuedEvent(type: "event", name: name, visitorId: "v", occurredAt: date)
+}
+
+@Suite struct WireFormatTests {
+    @Test func offsetsAreMeasuredFromSendTimeOldestFirst() {
+        let sentAt = Date(timeIntervalSince1970: 1_000)
+        let batch = WireBatch(
+            apiKey: "k",
+            context: .test,
+            events: [
+                QueuedEvent(type: "pageview", path: "/Timer", visitorId: "v", occurredAt: sentAt - 1.5),
+                event("late", at: sentAt - 0.25),
+                QueuedEvent(type: "pageview", path: "/Start", visitorId: "v", occurredAt: sentAt - 3),
+            ],
+            sentAt: sentAt
+        )
+        #expect(batch.events.map(\.offsetMs) == [3000, 1500, 250])
+        #expect(batch.events.first?.path == "/Start")
+    }
+
+    @Test func encodesTheIngestShape() throws {
+        let sentAt = Date()
+        var queued = event("timer_started", at: sentAt)
+        queued.properties = ["project": "Website", "billable": true, "minutes": 25]
+        let batch = WireBatch(apiKey: "k", context: .test, events: [queued], sentAt: sentAt)
+
+        let json = try #require(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(batch)) as? [String: Any]
+        )
+        #expect(json["apiKey"] as? String == "k")
+        let context = try #require(json["context"] as? [String: Any])
+        #expect(context["os"] as? String == "iOS")
+        #expect(context["appVersion"] as? String == "1.4 (12)")
+        let sent = try #require((json["events"] as? [[String: Any]])?.first)
+        #expect(sent["offsetMs"] as? Int == 0)
+        #expect(sent["occurredAt"] == nil)
+        let properties = try #require(sent["properties"] as? [String: Any])
+        #expect(properties["billable"] as? Bool == true)
+        #expect(properties["minutes"] as? Int == 25)
+    }
+
+    @Test func screenNamesBecomePaths() {
+        #expect(screenPath("Timer") == "/Timer")
+        #expect(screenPath(" /Settings ") == "/Settings")
+    }
+}
+
+@Suite struct EventQueueTests {
+    @Test func sendsInBatchesOfAtMostOneHundred() async {
+        let transport = MockTransport()
+        let queue = EventQueue(apiKey: "k", context: .test, transport: transport, storeURL: nil)
+        for index in 0..<250 { queue.enqueue(event("e\(index)")) }
+        await queue.flush()
+        #expect(transport.batchSizes == [100, 100, 50])
+        #expect(queue.count == 0)
+    }
+
+    @Test func keepsEventsWhileTheBackendIsUnreachable() async {
+        let transport = MockTransport(results: [.retryLater])
+        let queue = EventQueue(apiKey: "k", context: .test, transport: transport, storeURL: nil)
+        for index in 0..<3 { queue.enqueue(event("e\(index)")) }
+        await queue.flush()
+        #expect(queue.count == 3)
+        await queue.flush()
+        #expect(queue.count == 0)
+    }
+
+    @Test func dropsBatchesTheBackendRejects() async {
+        let queue = EventQueue(
+            apiKey: "k",
+            context: .test,
+            transport: MockTransport(results: [.rejected]),
+            storeURL: nil
+        )
+        queue.enqueue(event("invalid"))
+        await queue.flush()
+        #expect(queue.count == 0)
+    }
+
+    @Test func survivesARestart() throws {
+        let url = FileManager.default.temporaryDirectory.appending(path: "atriya-\(UUID()).json")
+        let before = EventQueue(apiKey: "k", context: .test, transport: MockTransport(), storeURL: url)
+        before.enqueue(event("a"))
+        before.enqueue(event("b"))
+        before.persist()
+
+        let after = EventQueue(apiKey: "k", context: .test, transport: MockTransport(), storeURL: url)
+        after.restore()
+        #expect(after.pending.map(\.name) == ["a", "b"])
+        #expect(!FileManager.default.fileExists(atPath: url.path))
+    }
+}
+
+@Suite struct LifecycleTests {
+    private func client(defaults: UserDefaults, context: DeviceContext = .test) -> AtriyaClient {
+        var options = Atriya.Options()
+        options.trackAppLifecycle = false
+        options.reportCrashes = false
+        return AtriyaClient(
+            apiKey: "k",
+            baseURL: URL(string: "http://localhost")!,
+            options: options,
+            context: context,
+            defaults: defaults,
+            transport: MockTransport(fallback: .retryLater),
+            storeURL: nil
+        )
+    }
+
+    private func freshDefaults() -> UserDefaults {
+        UserDefaults(suiteName: "atriya-tests-\(UUID())")!
+    }
+
+    @Test func recordsOpensAndForegroundTime() {
+        let atriya = client(defaults: freshDefaults())
+        let start = Date()
+        atriya.didBecomeActive(now: start)
+        atriya.didEnterBackground(now: start + 42)
+        // A quick app switch continues the same foreground period …
+        atriya.didBecomeActive(now: start + 50)
+        atriya.didEnterBackground(now: start + 60)
+        // … a longer break counts as a new open.
+        atriya.didBecomeActive(now: start + 180)
+
+        let types = atriya.queue.pending.map(\.type)
+        #expect(types == ["app_open", "app_background", "app_background", "app_open"])
+        #expect(atriya.queue.pending[1].properties?["foregroundSeconds"] == 42)
+    }
+
+    @Test func eventsCarryTheCurrentScreenAndUser() {
+        let atriya = client(defaults: freshDefaults())
+        atriya.record(type: "pageview", path: "/Timer")
+        atriya.userId = "u-1"
+        atriya.record(type: "event", name: "timer_started")
+
+        let last = atriya.queue.pending.last
+        #expect(last?.path == "/Timer")
+        #expect(last?.userId == "u-1")
+        #expect(last?.visitorId == atriya.queue.pending.first?.visitorId)
+    }
+
+    @Test func optOutStopsRecording() {
+        let atriya = client(defaults: freshDefaults())
+        atriya.isOptedOut = true
+        atriya.record(type: "event", name: "ignored")
+        #expect(atriya.queue.count == 0)
+    }
+
+    @MainActor
+    @Test func reportsInstallsAndUpdates() {
+        let defaults = freshDefaults()
+        let first = client(defaults: defaults)
+        first.activate()
+        #expect(first.queue.pending.map(\.type) == ["app_install"])
+
+        var updated = DeviceContext.test
+        updated.appVersion = "1.5 (13)"
+        let second = client(defaults: defaults, context: updated)
+        second.activate()
+        #expect(second.queue.pending.map(\.type) == ["app_update"])
+        #expect(second.queue.pending.first?.properties?["from"] == "1.4 (12)")
+    }
+}
+
+@Suite struct DiagnosticParserTests {
+    private func fixture(_ name: String) throws -> Data {
+        let url = try #require(Bundle.module.url(forResource: name, withExtension: "json", subdirectory: "Fixtures"))
+        return try Data(contentsOf: url)
+    }
+
+    @Test func turnsACrashIntoAnErrorReport() throws {
+        let report = try #require(DiagnosticParser.crash(from: fixture("crash")))
+        #expect(report.name == "Crash: EXC_BAD_ACCESS (SIGSEGV)")
+        #expect(report.properties["kind"] == "crash")
+        #expect(report.properties["appVersion"] == "1.4")
+        #expect(report.properties["frames"] == "SimpleTime +0x1a2b3c\nSwiftUI +0x181cd\nUIKitCore +0x1000")
+    }
+
+    @Test func turnsAHangIntoAnErrorReport() throws {
+        let report = try #require(DiagnosticParser.hang(from: fixture("hang")))
+        #expect(report.name == "Hang: 2.53 sec")
+        #expect(report.properties["kind"] == "hang")
+        #expect(report.properties["frames"] == "SimpleTime +0x800")
+    }
+
+    @Test func ignoresUnreadableDiagnostics() {
+        #expect(DiagnosticParser.crash(from: Data("{}".utf8)) == nil)
+        #expect(DiagnosticParser.hang(from: Data("not json".utf8)) == nil)
+    }
+}

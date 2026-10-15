@@ -1,0 +1,28 @@
+{
+  "version": "1.0.0",
+  "callStackTree": {
+    "callStackPerThread": true,
+    "callStacks": [
+      {
+        "threadAttributed": true,
+        "callStackRootFrames": [
+          {
+            "binaryUUID": "9E8D8DE8-794B-3F11-9C1C-4D3C1B2F8E10",
+            "offsetIntoBinaryTextSegment": 2048,
+            "sampleCount": 20,
+            "binaryName": "SimpleTime",
+            "address": 4300720128
+          }
+        ]
+      }
+    ]
+  },
+  "diagnosticMetaData": {
+    "appBuildVersion": "12",
+    "appVersion": "1.4",
+    "osVersion": "iPhone OS 18.6 (22G86)",
+    "deviceType": "iPhone15,3",
+    "hangDuration": "2.53 sec",
+    "platformArchitecture": "arm64e"
+  }
+}

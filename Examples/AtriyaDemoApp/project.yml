@@ -1,0 +1,39 @@
+# Minimal iOS app for trying the SDK in the Simulator.
+#
+#   xcodegen generate
+#   xcodebuild -scheme AtriyaDemoApp -destination 'platform=iOS Simulator,name=iPhone 17' \
+#     ATRIYA_KEY=atr_pk_… ATRIYA_URL=http://localhost:3000 build
+#
+# The key of an iOS platform from the dashboard goes into ATRIYA_KEY.
+name: AtriyaDemoApp
+options:
+  bundleIdPrefix: io.atriya
+  deploymentTarget:
+    iOS: "17.0"
+packages:
+  Atriya:
+    path: ../..
+targets:
+  AtriyaDemoApp:
+    type: application
+    platform: iOS
+    sources: [Sources]
+    dependencies:
+      - package: Atriya
+    info:
+      path: Generated/Info.plist
+      properties:
+        CFBundleDisplayName: Atriya Demo
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "1"
+        UILaunchScreen: {}
+        AtriyaKey: $(ATRIYA_KEY)
+        AtriyaURL: $(ATRIYA_URL)
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.atriya.demo
+        CODE_SIGNING_ALLOWED: "NO"
+        ATRIYA_KEY: ""
+        ATRIYA_URL: http://localhost:3000
