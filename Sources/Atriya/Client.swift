@@ -71,8 +71,18 @@ final class AtriyaClient: @unchecked Sendable {
     }
 
     var isOptedOut: Bool {
-        get { defaults.bool(forKey: Keys.optedOut) }
-        set { defaults.set(newValue, forKey: Keys.optedOut) }
+        get { Self.isOptedOut(in: defaults) }
+        set { Self.setOptedOut(newValue, in: defaults) }
+    }
+
+    /// The opt-out lives in the app's user defaults, so it holds across
+    /// launches and can be set before `Atriya.start`.
+    static func isOptedOut(in defaults: UserDefaults) -> Bool {
+        defaults.bool(forKey: Keys.optedOut)
+    }
+
+    static func setOptedOut(_ optedOut: Bool, in defaults: UserDefaults) {
+        defaults.set(optedOut, forKey: Keys.optedOut)
     }
 
     // MARK: - Recording

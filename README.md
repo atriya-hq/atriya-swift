@@ -22,7 +22,7 @@ dashboard work for apps the same way as for websites.
    `Atriya` library to your app target. In a `Package.swift`:
 
    ```swift
-   .package(url: "https://github.com/atriya-hq/atriya-swift", from: "0.1.0")
+   .package(url: "https://github.com/atriya-hq/atriya-swift", from: "0.1.1")
    // in your target's dependencies:
    .product(name: "Atriya", package: "atriya-swift")
    ```
@@ -36,7 +36,7 @@ import SwiftUI
 @main
 struct SimpleTimeApp: App {
     init() {
-        Atriya.start(apiKey: "atr_pk_…", baseURL: URL(string: "https://api.atriya.io")!)
+        Atriya.start(apiKey: "atr_pk_…", baseURL: URL(string: "https://intern.atriya.io")!)
     }
 
     var body: some Scene {
@@ -45,7 +45,8 @@ struct SimpleTimeApp: App {
 }
 ```
 
-Apps talking to a local backend over plain HTTP need
+`baseURL` is the address of your Atriya server – the same one the dashboard
+runs on. Apps talking to a local backend over plain HTTP need
 `NSAppTransportSecurity` → `NSAllowsLocalNetworking` in their Info.plist.
 
 ## Recording
@@ -82,6 +83,30 @@ directory and sent on the next launch.
 MetricKit delivers crash reports on the next launch after a crash and hang
 reports at most once a day. Stack frames are sent as `Binary +offset`;
 turning them into function names (symbolication) is not supported yet.
+
+## Privacy
+
+The package ships a privacy manifest (`PrivacyInfo.xcprivacy`), so Xcode's
+privacy report for your app lists what Atriya collects:
+
+| Data | Purpose |
+|---|---|
+| Product interaction: screens, events, app opens | Analytics |
+| Device ID: the anonymous install ID | Analytics |
+| Coarse location: country, region and city, derived by the backend from the IP address | Analytics |
+| Crash data and performance data (hangs) | App functionality |
+| Other diagnostic data: app version, OS version, device model, handled errors | Analytics, app functionality |
+
+None of it is used for tracking or linked to the user's identity – unless you
+call `identify(userId:…)`. Then declare the data as linked to the user in App
+Store Connect, together with the user ID and any email address or name you
+pass.
+
+The only API that needs a declared reason is `UserDefaults` (`CA92.1`): it
+keeps the install ID, the user ID and the opt-out.
+
+`Atriya.optOut()` stops recording and is remembered across launches, also when
+called before `start`. Offer it as a switch in your app's settings.
 
 ## Development
 

@@ -4,7 +4,7 @@ import os
 /// Atriya Analytics for iOS and macOS apps.
 ///
 /// ```swift
-/// Atriya.start(apiKey: "atr_pk_…", baseURL: URL(string: "https://api.atriya.io")!)
+/// Atriya.start(apiKey: "atr_pk_…", baseURL: URL(string: "https://intern.atriya.io")!)
 /// Atriya.screen("Timer")                 // or `.atriyaScreen("Timer")` in SwiftUI
 /// Atriya.track("timer_started", properties: ["project": "Website"])
 /// ```
@@ -15,7 +15,7 @@ import os
 /// MetricKit and show up as errors. No advertising ID is used, so no tracking
 /// permission prompt is needed.
 public enum Atriya {
-    public static let sdkVersion = "0.1.0"
+    public static let sdkVersion = "0.1.1"
 
     public struct Options: Sendable {
         /// Records app opens and foreground time (`app_open`, `app_background`).
@@ -40,7 +40,7 @@ public enum Atriya {
     ///
     /// - Parameters:
     ///   - apiKey: The platform's key from the Atriya dashboard (`atr_pk_…`).
-    ///   - baseURL: Your Atriya backend, e.g. `https://api.atriya.io`.
+    ///   - baseURL: Your Atriya backend, e.g. `https://intern.atriya.io`.
     @MainActor
     public static func start(apiKey: String, baseURL: URL, options: Options = Options()) {
         let context = DeviceContext.current()
@@ -93,17 +93,26 @@ public enum Atriya {
         client?.userId = nil
     }
 
-    /// Stops recording until `optIn()` is called. The choice is remembered.
+    /// Stops recording until `optIn()` is called. The choice is remembered
+    /// across launches, also when made before `start(apiKey:baseURL:options:)`.
     public static func optOut() {
-        client?.isOptedOut = true
+        setOptedOut(true)
     }
 
     public static func optIn() {
-        client?.isOptedOut = false
+        setOptedOut(false)
     }
 
     public static var isOptedOut: Bool {
-        client?.isOptedOut ?? false
+        client?.isOptedOut ?? AtriyaClient.isOptedOut(in: .standard)
+    }
+
+    private static func setOptedOut(_ optedOut: Bool) {
+        if let client {
+            client.isOptedOut = optedOut
+        } else {
+            AtriyaClient.setOptedOut(optedOut, in: .standard)
+        }
     }
 
     /// Sends all waiting events now.

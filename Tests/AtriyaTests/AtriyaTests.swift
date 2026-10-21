@@ -186,6 +186,21 @@ private func event(_ name: String, at date: Date = Date()) -> QueuedEvent {
     }
 
     @MainActor
+    @Test func optOutHoldsOnTheNextLaunch() {
+        let defaults = freshDefaults()
+        // As `Atriya.optOut()` does before `start`: no client yet.
+        AtriyaClient.setOptedOut(true, in: defaults)
+        let nextLaunch = client(defaults: defaults)
+        #expect(nextLaunch.isOptedOut)
+        nextLaunch.activate()
+        nextLaunch.record(type: "event", name: "ignored")
+        #expect(nextLaunch.queue.count == 0, "no app_install, no events")
+
+        nextLaunch.isOptedOut = false
+        #expect(client(defaults: defaults).isOptedOut == false)
+    }
+
+    @MainActor
     @Test func reportsInstallsAndUpdates() {
         let defaults = freshDefaults()
         let first = client(defaults: defaults)

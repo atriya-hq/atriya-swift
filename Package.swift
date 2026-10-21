@@ -8,7 +8,8 @@ let package = Package(
         .library(name: "Atriya", targets: ["Atriya"]),
     ],
     targets: [
-        .target(name: "Atriya"),
+        // The privacy manifest lists collected data and the reason for UserDefaults.
+        .target(name: "Atriya", resources: [.copy("PrivacyInfo.xcprivacy")]),
         .testTarget(
             name: "AtriyaTests",
             dependencies: ["Atriya"],
