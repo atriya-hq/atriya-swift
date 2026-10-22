@@ -228,6 +228,21 @@ private func event(_ name: String, at date: Date = Date()) -> QueuedEvent {
         #expect(report.properties["kind"] == "crash")
         #expect(report.properties["appVersion"] == "1.4")
         #expect(report.properties["frames"] == "SimpleTime +0x1a2b3c\nSwiftUI +0x181cd\nUIKitCore +0x1000")
+        #expect(report.properties["binaryImages"] == """
+            9E8D8DE8-794B-3F11-9C1C-4D3C1B2F8E10 SimpleTime
+            B5F3A6C2-6C1D-3D8E-9F4B-2A7E5C1D9B03 SwiftUI
+            0C7A1E55-4B8F-3E62-A9D1-7F3B2C4E6A18 UIKitCore
+            """)
+    }
+
+    /// Reports from devices carry the load address in offsetIntoBinaryTextSegment.
+    @Test func takesTheOffsetFromTheAddressWhenMetricKitSendsTheLoadAddress() throws {
+        let report = try #require(DiagnosticParser.crash(from: fixture("crash-device")))
+        #expect(report.properties["frames"] == "Atriya +0x4498\nAtriya +0x9a10\nSwiftUICore +0x2c4f0")
+        #expect(report.properties["binaryImages"] == """
+            269D8A8F-4BCC-3E30-AA27-368ED680E51E Atriya
+            3F1C7A0E-2B4D-3C5E-9A8B-7D6E5F4A3B2C SwiftUICore
+            """)
     }
 
     @Test func turnsAHangIntoAnErrorReport() throws {

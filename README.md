@@ -6,7 +6,8 @@ Atriya backend. iOS 16+ and macOS 13+.
 - **Usage:** active users, sessions and time in the app, screens, retention
 - **Your events:** e.g. `timer_started`, optionally with a value (counts as revenue)
 - **Versions and devices:** app version, OS version, device model
-- **Crashes and hangs:** via Apple's MetricKit, with the stack of the affected thread
+- **Crashes and hangs:** via Apple's MetricKit, with the stack of the affected thread –
+  with functions, files and lines once you upload the dSYMs
 - **Privacy:** an anonymous install ID instead of the advertising ID, so no
   tracking prompt; `Atriya.optOut()` stops recording
 
@@ -22,7 +23,7 @@ dashboard work for apps the same way as for websites.
    `Atriya` library to your app target. In a `Package.swift`:
 
    ```swift
-   .package(url: "https://github.com/atriya-hq/atriya-swift", from: "0.1.1")
+   .package(url: "https://github.com/atriya-hq/atriya-swift", from: "0.1.2")
    // in your target's dependencies:
    .product(name: "Atriya", package: "atriya-swift")
    ```
@@ -72,6 +73,43 @@ Recorded automatically: `app_install`, `app_update`, `app_open` (after at
 least a minute in the background) and `app_background` with the seconds spent
 in the foreground.
 
+## Crash symbolication
+
+Crash and hang stacks arrive as offsets into your binaries. Upload the debug
+symbols (dSYMs) of each release build, and the dashboard shows the functions,
+files and lines – including inlined calls – instead.
+
+1. In the Atriya dashboard, open your project → Settings → **Debug symbols**
+   and create an upload key (`atr_sk_…`). Keep it secret: unlike the app's
+   key, it doesn't belong into the app.
+2. After a release build, upload its dSYMs:
+
+   ```sh
+   ATRIYA_UPLOAD_KEY=atr_sk_… \
+     .build/checkouts/atriya-swift/Scripts/upload-symbols.sh path/to/MyApp.app.dSYM
+   ```
+
+   Xcode keeps the package in DerivedData:
+   `…/SourcePackages/checkouts/atriya-swift/Scripts/upload-symbols.sh`. The
+   script takes `.dSYM` bundles or folders containing them, such as an
+   `.xcarchive`, and sends the demangled Swift names along – that part needs a
+   Mac with Xcode. `ATRIYA_URL` points it to your server
+   (`https://intern.atriya.io` by default).
+
+To upload with every build, add a Run Script phase after linking with
+`"${BUILD_DIR%/Build/*}/SourcePackages/checkouts/atriya-swift/Scripts/upload-symbols.sh"`,
+`ATRIYA_UPLOAD_KEY` as a build setting and these input files, so Xcode runs it
+once the dSYM exists:
+
+```
+${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}/Contents/Resources/DWARF/${TARGET_NAME}
+${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}/Contents/Info.plist
+```
+
+Debug builds have no dSYM and are skipped; a failed upload is a warning, not a
+failed build. Only release builds need `DEBUG_INFORMATION_FORMAT =
+dwarf-with-dsym` – Xcode's default.
+
 ## How it works
 
 Events are queued and sent in batches every 15 seconds, when 30 are waiting
@@ -81,8 +119,8 @@ if the device clock is wrong. Undelivered events are written to the caches
 directory and sent on the next launch.
 
 MetricKit delivers crash reports on the next launch after a crash and hang
-reports at most once a day. Stack frames are sent as `Binary +offset`;
-turning them into function names (symbolication) is not supported yet.
+reports at most once a day. Stack frames are sent as `Binary +offset`, with
+the UUID of each binary, so the backend can match them to the uploaded dSYMs.
 
 ## Privacy
 

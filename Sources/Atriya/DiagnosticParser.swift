@@ -54,28 +54,50 @@ enum DiagnosticParser {
         for key in ["appVersion", "appBuildVersion", "osVersion", "deviceType", "platformArchitecture"] {
             if let value = meta[key] as? String { properties[key] = .string(value) }
         }
-        let frames = crashingThreadFrames(root)
-        if !frames.isEmpty {
-            properties["frames"] = .string(frames.joined(separator: "\n"))
+        let stack = crashingThreadStack(root)
+        if !stack.frames.isEmpty {
+            properties["frames"] = .string(stack.frames.joined(separator: "\n"))
+        }
+        if !stack.binaryImages.isEmpty {
+            properties["binaryImages"] = .string(stack.binaryImages.joined(separator: "\n"))
         }
         return properties
     }
 
     /// Walks the call stack of the attributed (crashing or hanging) thread
-    /// from the innermost frame outwards: "SimpleTime +0x1a2b3c".
-    static func crashingThreadFrames(_ root: [String: Any]) -> [String] {
+    /// from the innermost frame outwards: "SimpleTime +0x1a2b3c". With each
+    /// binary's UUID ("9E8D8DE8-… SimpleTime") the backend finds the dSYM that
+    /// turns the offsets into functions, files and lines.
+    static func crashingThreadStack(_ root: [String: Any]) -> (frames: [String], binaryImages: [String]) {
         guard let tree = root["callStackTree"] as? [String: Any],
-              let stacks = tree["callStacks"] as? [[String: Any]] else { return [] }
+              let stacks = tree["callStacks"] as? [[String: Any]] else { return ([], []) }
         let stack = stacks.first { ($0["threadAttributed"] as? Bool) == true } ?? stacks.first
         var frame = (stack?["callStackRootFrames"] as? [[String: Any]])?.first
         var frames: [String] = []
+        var binaryImages: [String] = []
+        var seen: Set<String> = []
         while let current = frame, frames.count < maxFrames {
             let binary = current["binaryName"] as? String ?? "???"
-            let offset = current["offsetIntoBinaryTextSegment"] as? Int ?? 0
-            frames.append("\(binary) +0x\(String(offset, radix: 16))")
+            frames.append("\(binary) +0x\(String(offset(of: current), radix: 16))")
+            if let uuid = current["binaryUUID"] as? String, !seen.contains(binary) {
+                seen.insert(binary)
+                binaryImages.append("\(uuid.uppercased()) \(binary)")
+            }
             frame = (current["subFrames"] as? [[String: Any]])?.first
         }
-        return frames
+        return (frames, binaryImages)
+    }
+
+    /// The frame's offset into the text segment of its binary. MetricKit
+    /// names the field that way, but on devices it holds the address the
+    /// binary was loaded at; the offset is then the distance of `address`
+    /// from it. Load addresses lie above 4 GB, offsets far below.
+    static func offset(of frame: [String: Any]) -> Int {
+        let value = frame["offsetIntoBinaryTextSegment"] as? Int ?? 0
+        guard let address = frame["address"] as? Int, address >= value, address - value < 1 << 32 else {
+            return value
+        }
+        return address - value
     }
 
     private static func exceptionName(_ type: Int) -> String {

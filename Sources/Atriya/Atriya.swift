@@ -15,7 +15,7 @@ import os
 /// MetricKit and show up as errors. No advertising ID is used, so no tracking
 /// permission prompt is needed.
 public enum Atriya {
-    public static let sdkVersion = "0.1.1"
+    public static let sdkVersion = "0.1.2"
 
     public struct Options: Sendable {
         /// Records app opens and foreground time (`app_open`, `app_background`).

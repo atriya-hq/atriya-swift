@@ -1,0 +1,48 @@
+{
+  "version": "1.0.0",
+  "callStackTree": {
+    "callStackPerThread": true,
+    "callStacks": [
+      {
+        "threadAttributed": true,
+        "callStackRootFrames": [
+          {
+            "binaryUUID": "269d8a8f-4bcc-3e30-aa27-368ed680e51e",
+            "offsetIntoBinaryTextSegment": 4334944256,
+            "sampleCount": 1,
+            "binaryName": "Atriya",
+            "address": 4334961816,
+            "subFrames": [
+              {
+                "binaryUUID": "269d8a8f-4bcc-3e30-aa27-368ed680e51e",
+                "offsetIntoBinaryTextSegment": 4334944256,
+                "sampleCount": 1,
+                "binaryName": "Atriya",
+                "address": 4334983696,
+                "subFrames": [
+                  {
+                    "binaryUUID": "3F1C7A0E-2B4D-3C5E-9A8B-7D6E5F4A3B2C",
+                    "offsetIntoBinaryTextSegment": 7516192768,
+                    "sampleCount": 1,
+                    "binaryName": "SwiftUICore",
+                    "address": 7516374256
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "diagnosticMetaData": {
+    "appBuildVersion": "2",
+    "appVersion": "0.2.0",
+    "exceptionType": 1,
+    "osVersion": "iPhone OS 27.0.1 (25A350)",
+    "deviceType": "iPhone18,2",
+    "signal": 11,
+    "exceptionCode": 0,
+    "platformArchitecture": "arm64e"
+  }
+}
