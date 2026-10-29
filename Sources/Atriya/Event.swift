@@ -9,7 +9,8 @@ struct QueuedEvent: Codable, Sendable, Equatable {
     var path: String?
     var properties: [String: AtriyaValue]?
     var userId: String?
-    var visitorId: String
+    /// The install ID; none in anonymous mode.
+    var visitorId: String?
     /// When the event happened on this device. Never sent directly: the batch
     /// carries `offsetMs` instead, so a wrong device clock doesn't matter.
     var occurredAt: Date
@@ -23,18 +24,22 @@ struct WireEvent: Encodable, Equatable, Sendable {
     var path: String?
     var properties: [String: AtriyaValue]?
     var userId: String?
-    var visitorId: String
+    var visitorId: String?
     var offsetMs: Int
 }
 
 struct WireBatch: Encodable, Sendable {
     var apiKey: String
     var context: DeviceContext
+    /// `true` in anonymous mode, so the backend derives a visitor ID per day
+    /// and keeps only the country; left out otherwise.
+    var anonymous: Bool?
     var events: [WireEvent]
 
-    init(apiKey: String, context: DeviceContext, events: [QueuedEvent], sentAt: Date) {
+    init(apiKey: String, context: DeviceContext, events: [QueuedEvent], sentAt: Date, anonymous: Bool = false) {
         self.apiKey = apiKey
         self.context = context
+        self.anonymous = anonymous ? true : nil
         self.events = events
             .sorted { $0.occurredAt < $1.occurredAt }
             .map { event in

@@ -13,9 +13,10 @@ import os
 /// goals work for apps the same way as for websites. App opens and time in
 /// the foreground are recorded automatically, crashes and hangs arrive via
 /// MetricKit and show up as errors. No advertising ID is used, so no tracking
-/// permission prompt is needed.
+/// permission prompt is needed. With `Options.anonymous` nothing is kept on the
+/// device at all.
 public enum Atriya {
-    public static let sdkVersion = "0.1.2"
+    public static let sdkVersion = "0.1.3"
 
     public struct Options: Sendable {
         /// Records app opens and foreground time (`app_open`, `app_background`).
@@ -26,6 +27,20 @@ public enum Atriya {
         public var flushInterval: TimeInterval = 15
         /// Uploads immediately once this many events are waiting.
         public var flushAt = 30
+        /// Keeps nothing on the device: no install ID, no user ID, no
+        /// `app_install` or `app_update`, and events that couldn't be sent
+        /// stay in memory instead of the caches directory. The backend tells
+        /// devices apart for one day at a time instead, keeps the country but
+        /// not region and city, and `identify` is ignored.
+        ///
+        /// Daily figures stay – active devices, opens, time in the app,
+        /// screens, events, crashes and hangs. Installs, retention and unique
+        /// users over more than a day aren't available.
+        ///
+        /// Meant for apps that measure without asking: in the EU, storing an
+        /// identifier on the device or reading it back needs consent
+        /// (Art. 5(3) ePrivacy Directive, § 25 TDDDG in Germany).
+        public var anonymous = false
 
         public init() {}
     }
@@ -77,7 +92,8 @@ public enum Atriya {
     }
 
     /// Links this install to a user of your app. Later events carry the user
-    /// ID, and the user shows up in the dashboard's user list.
+    /// ID, and the user shows up in the dashboard's user list. Ignored in
+    /// anonymous mode.
     public static func identify(
         userId: String,
         email: String? = nil,

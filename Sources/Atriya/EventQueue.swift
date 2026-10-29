@@ -20,6 +20,7 @@ final class EventQueue: @unchecked Sendable {
     private let context: DeviceContext
     private let transport: EventTransport
     private let storeURL: URL?
+    private let anonymous: Bool
     private let now: @Sendable () -> Date
 
     private struct Entry: Codable {
@@ -32,12 +33,14 @@ final class EventQueue: @unchecked Sendable {
         context: DeviceContext,
         transport: EventTransport,
         storeURL: URL?,
+        anonymous: Bool = false,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.apiKey = apiKey
         self.context = context
         self.transport = transport
         self.storeURL = storeURL
+        self.anonymous = anonymous
         self.now = now
     }
 
@@ -72,7 +75,9 @@ final class EventQueue: @unchecked Sendable {
         while true {
             let batch = lock.withLock { Array(events.prefix(Self.batchLimit)) }
             guard !batch.isEmpty else { return }
-            let body = WireBatch(apiKey: apiKey, context: context, events: batch.map(\.event), sentAt: now())
+            let body = WireBatch(
+                apiKey: apiKey, context: context, events: batch.map(\.event), sentAt: now(), anonymous: anonymous
+            )
             let result = await transport.send(body)
             if result == .retryLater { return }
             if result == .rejected {

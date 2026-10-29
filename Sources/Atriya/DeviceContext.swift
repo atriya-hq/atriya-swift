@@ -18,7 +18,9 @@ struct DeviceContext: Encodable, Sendable, Equatable {
 
     @MainActor
     static func current(bundle: Bundle = .main) -> DeviceContext {
-        #if os(iOS)
+        // Mac Catalyst counts as iOS, but there UIDevice says "iPadOS" and uname
+        // only knows "arm64" – the Mac branch describes it as the Mac it is.
+        #if os(iOS) && !targetEnvironment(macCatalyst)
         let device = UIDevice.current
         let deviceType: String
         switch device.userInterfaceIdiom {
@@ -65,7 +67,7 @@ struct DeviceContext: Encodable, Sendable, Equatable {
             return model
         }
         #endif
-        #if os(macOS)
+        #if os(macOS) || targetEnvironment(macCatalyst)
         var size = 0
         sysctlbyname("hw.model", nil, &size, nil, 0)
         var model = [CChar](repeating: 0, count: max(size, 1))

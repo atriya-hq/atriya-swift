@@ -5,6 +5,8 @@ import Foundation
 //
 //   ATRIYA_KEY=atr_pk_… ATRIYA_URL=http://localhost:3000 swift run AtriyaDemo
 //
+// ATRIYA_ANONYMOUS=1 runs it in anonymous mode (`Options.anonymous`).
+//
 // Lifecycle events need a real app, so this demo covers screens, custom
 // events, identify and a handled error.
 
@@ -28,6 +30,7 @@ let baseURL = URL(string: environment["ATRIYA_URL"] ?? "http://localhost:3000")!
 await MainActor.run {
     var options = Atriya.Options()
     options.reportCrashes = false
+    options.anonymous = environment["ATRIYA_ANONYMOUS"] == "1"
     Atriya.start(apiKey: key, baseURL: baseURL, options: options)
 }
 

@@ -9,7 +9,8 @@ Atriya backend. iOS 16+ and macOS 13+.
 - **Crashes and hangs:** via Apple's MetricKit, with the stack of the affected thread –
   with functions, files and lines once you upload the dSYMs
 - **Privacy:** an anonymous install ID instead of the advertising ID, so no
-  tracking prompt; `Atriya.optOut()` stops recording
+  tracking prompt; `Atriya.optOut()` stops recording; an
+  [anonymous mode](#anonymous-mode) keeps nothing on the device at all
 
 Screens count like pageviews, so sessions, funnels, goals and retention in the
 dashboard work for apps the same way as for websites.
@@ -23,7 +24,7 @@ dashboard work for apps the same way as for websites.
    `Atriya` library to your app target. In a `Package.swift`:
 
    ```swift
-   .package(url: "https://github.com/atriya-hq/atriya-swift", from: "0.1.2")
+   .package(url: "https://github.com/atriya-hq/atriya-swift", from: "0.1.3")
    // in your target's dependencies:
    .product(name: "Atriya", package: "atriya-swift")
    ```
@@ -69,9 +70,46 @@ Atriya.identify(userId: user.id, email: user.email, name: user.name)
 Atriya.reset()
 ```
 
-Recorded automatically: `app_install`, `app_update`, `app_open` (after at
-least a minute in the background) and `app_background` with the seconds spent
-in the foreground.
+Recorded automatically: `app_install`, `app_update` (both not in anonymous
+mode), `app_open` (after at least a minute in the background) and
+`app_background` with the seconds spent in the foreground.
+
+Visitors count every event, so an app shows up even before it marks a single
+screen; screens add the screen views and which screens are used. After
+`identify`, every event moves the user's “last seen” forward.
+
+## Anonymous mode
+
+```swift
+var options = Atriya.Options()
+options.anonymous = true
+Atriya.start(apiKey: "atr_pk_…", baseURL: URL(string: "https://intern.atriya.io")!, options: options)
+```
+
+For apps that measure without asking. In the EU, storing an identifier on the
+device or reading it back needs consent (Art. 5(3) ePrivacy Directive, § 25
+TDDDG in Germany) – an install ID included. In anonymous mode the SDK keeps
+nothing on the device:
+
+- no install ID and no user ID; `identify` is ignored
+- no `app_install` or `app_update`, which would need the last version on disk
+- events that couldn't be sent stay in memory instead of the caches directory
+- an install ID, user ID or waiting events from an earlier launch without
+  anonymous mode are deleted on start
+
+The batches say they are anonymous. The backend then tells devices apart for
+one UTC day only, with a hash of a daily random salt, the IP address, the
+User-Agent and the device model – the same way it counts visitors of cookieless
+websites. It keeps the country but not region and city, and neither the
+User-Agent nor a user ID.
+
+What you get: active devices, opens and time in the app per day, screens,
+events, versions, devices, countries, crashes and hangs. What you don't:
+installs (take them from App Store Connect), retention and unique users over
+more than a day. Crash-free figures count device-days.
+
+The opt-out still applies and is the one thing the SDK stores – only once the
+user turns recording off.
 
 ## Crash symbolication
 
@@ -140,8 +178,13 @@ call `identify(userId:…)`. Then declare the data as linked to the user in App
 Store Connect, together with the user ID and any email address or name you
 pass.
 
+In anonymous mode there is no device ID, and the location narrows to the
+country. The manifest can't know the mode and still lists the device ID;
+declare in App Store Connect what your app actually sends.
+
 The only API that needs a declared reason is `UserDefaults` (`CA92.1`): it
-keeps the install ID, the user ID and the opt-out.
+keeps the install ID, the user ID and the opt-out – in anonymous mode only the
+opt-out.
 
 `Atriya.optOut()` stops recording and is remembered across launches, also when
 called before `start`. Offer it as a switch in your app's settings.

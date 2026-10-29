@@ -26,6 +26,8 @@ final class MockTransport: EventTransport, @unchecked Sendable {
 
     var batchSizes: [Int] { lock.withLock { sent.map(\.events.count) } }
 
+    var batches: [WireBatch] { lock.withLock { sent } }
+
     func send(_ batch: WireBatch) async -> DeliveryResult {
         lock.withLock {
             sent.append(batch)
@@ -67,6 +69,7 @@ private func event(_ name: String, at date: Date = Date()) -> QueuedEvent {
             JSONSerialization.jsonObject(with: JSONEncoder().encode(batch)) as? [String: Any]
         )
         #expect(json["apiKey"] as? String == "k")
+        #expect(json["anonymous"] == nil)
         let context = try #require(json["context"] as? [String: Any])
         #expect(context["os"] as? String == "iOS")
         #expect(context["appVersion"] as? String == "1.4 (12)")
@@ -76,6 +79,17 @@ private func event(_ name: String, at date: Date = Date()) -> QueuedEvent {
         let properties = try #require(sent["properties"] as? [String: Any])
         #expect(properties["billable"] as? Bool == true)
         #expect(properties["minutes"] as? Int == 25)
+    }
+
+    /// The Mac branch also describes Mac Catalyst apps, which reported "iPadOS"
+    /// and "arm64" before.
+    @MainActor
+    @Test func describesTheMacByItsModel() {
+        let context = DeviceContext.current()
+        #expect(context.os == "macOS")
+        #expect(context.deviceType == "desktop")
+        #expect(!context.deviceModel.isEmpty)
+        #expect(!["arm64", "x86_64"].contains(context.deviceModel))
     }
 
     @Test func screenNamesBecomePaths() {
@@ -213,6 +227,109 @@ private func event(_ name: String, at date: Date = Date()) -> QueuedEvent {
         second.activate()
         #expect(second.queue.pending.map(\.type) == ["app_update"])
         #expect(second.queue.pending.first?.properties?["from"] == "1.4 (12)")
+    }
+}
+
+@Suite struct AnonymousModeTests {
+    private func client(
+        defaults: UserDefaults,
+        storeURL: URL?,
+        anonymous: Bool = true,
+        transport: MockTransport = MockTransport(fallback: .retryLater)
+    ) -> AtriyaClient {
+        var options = Atriya.Options()
+        options.trackAppLifecycle = false
+        options.reportCrashes = false
+        options.anonymous = anonymous
+        return AtriyaClient(
+            apiKey: "k",
+            baseURL: URL(string: "http://localhost")!,
+            options: options,
+            context: .test,
+            defaults: defaults,
+            transport: transport,
+            storeURL: storeURL
+        )
+    }
+
+    private func freshDefaults() -> UserDefaults {
+        UserDefaults(suiteName: "atriya-tests-\(UUID())")!
+    }
+
+    private func storeURL() -> URL {
+        FileManager.default.temporaryDirectory.appending(path: "atriya-\(UUID()).json")
+    }
+
+    private func storedKeys(_ defaults: UserDefaults) -> [String] {
+        defaults.dictionaryRepresentation().keys.filter { $0.hasPrefix("io.atriya.") }.sorted()
+    }
+
+    @MainActor
+    @Test func keepsNothingOnTheDevice() {
+        let defaults = freshDefaults()
+        let url = storeURL()
+        let atriya = client(defaults: defaults, storeURL: url)
+        atriya.activate()
+        let start = Date()
+        atriya.didBecomeActive(now: start)
+        atriya.record(type: "pageview", path: "/Timer")
+        atriya.identify(userId: "u-1", email: nil, name: nil, properties: nil)
+        atriya.userId = "u-1"
+        atriya.didEnterBackground(now: start + 30)
+        atriya.queue.persist()
+
+        let pending = atriya.queue.pending
+        #expect(pending.map(\.type) == ["app_open", "pageview", "app_background"], "no app_install")
+        #expect(pending.allSatisfy { $0.visitorId == nil && $0.userId == nil })
+        #expect(storedKeys(defaults).isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: url.path))
+    }
+
+    @MainActor
+    @Test func forgetsWhatAnEarlierVersionStored() {
+        let defaults = freshDefaults()
+        let url = storeURL()
+        // A launch without anonymous mode: install ID, user, app version and
+        // an event waiting on disk.
+        let before = client(defaults: defaults, storeURL: url, anonymous: false)
+        before.activate()
+        before.userId = "u-1"
+        before.queue.persist()
+        #expect(storedKeys(defaults) == ["io.atriya.installId", "io.atriya.lastAppVersion", "io.atriya.userId"])
+        #expect(FileManager.default.fileExists(atPath: url.path))
+
+        let after = client(defaults: defaults, storeURL: url)
+        after.activate()
+        #expect(after.queue.count == 0, "the old events carry the install ID")
+        #expect(storedKeys(defaults).isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: url.path))
+    }
+
+    @Test func theOptOutIsTheOnlyThingRemembered() {
+        let defaults = freshDefaults()
+        let atriya = client(defaults: defaults, storeURL: nil)
+        atriya.isOptedOut = true
+        atriya.record(type: "event", name: "ignored")
+        #expect(atriya.queue.count == 0)
+        #expect(storedKeys(defaults) == ["io.atriya.optedOut"])
+    }
+
+    @Test func batchesSayTheyAreAnonymousAndCarryNoIDs() async throws {
+        let transport = MockTransport()
+        let atriya = client(defaults: freshDefaults(), storeURL: nil, transport: transport)
+        atriya.record(type: "event", name: "timer_started")
+        await atriya.queue.flush()
+
+        let batch = try #require(transport.batches.first)
+        #expect(batch.anonymous == true)
+        let json = try #require(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(batch)) as? [String: Any]
+        )
+        #expect(json["anonymous"] as? Bool == true)
+        let sent = try #require((json["events"] as? [[String: Any]])?.first)
+        #expect(sent["name"] as? String == "timer_started")
+        #expect(sent["visitorId"] == nil)
+        #expect(sent["userId"] == nil)
     }
 }
 

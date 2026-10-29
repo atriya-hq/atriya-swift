@@ -13,6 +13,7 @@ final class AtriyaClient: @unchecked Sendable {
     private let transport: EventTransport
     private let defaults: UserDefaults
     private let context: DeviceContext
+    private let storeURL: URL?
 
     private let lock = NSLock()
     private var currentScreen: String?
@@ -44,9 +45,17 @@ final class AtriyaClient: @unchecked Sendable {
         self.options = options
         self.context = context
         self.defaults = defaults
+        self.storeURL = storeURL
         let transport = transport ?? HTTPTransport(baseURL: baseURL)
         self.transport = transport
-        self.queue = EventQueue(apiKey: apiKey, context: context, transport: transport, storeURL: storeURL)
+        self.queue = EventQueue(
+            apiKey: apiKey,
+            context: context,
+            transport: transport,
+            // Anonymous: events that couldn't be sent stay in memory only.
+            storeURL: options.anonymous ? nil : storeURL,
+            anonymous: options.anonymous
+        )
     }
 
     static func defaultStoreURL() -> URL? {
@@ -57,8 +66,10 @@ final class AtriyaClient: @unchecked Sendable {
     // MARK: - Identity
 
     /// Anonymous per-install ID (no IDFA, no tracking permission needed).
-    /// Reinstalling the app starts a new one.
-    var visitorId: String {
+    /// Reinstalling the app starts a new one. None in anonymous mode: the
+    /// backend derives one per day instead.
+    var visitorId: String? {
+        guard !options.anonymous else { return nil }
         if let id = defaults.string(forKey: Keys.installId) { return id }
         let id = UUID().uuidString.lowercased()
         defaults.set(id, forKey: Keys.installId)
@@ -66,8 +77,11 @@ final class AtriyaClient: @unchecked Sendable {
     }
 
     var userId: String? {
-        get { defaults.string(forKey: Keys.userId) }
-        set { defaults.set(newValue, forKey: Keys.userId) }
+        get { options.anonymous ? nil : defaults.string(forKey: Keys.userId) }
+        set {
+            guard !options.anonymous else { return }
+            defaults.set(newValue, forKey: Keys.userId)
+        }
     }
 
     var isOptedOut: Bool {
@@ -116,7 +130,7 @@ final class AtriyaClient: @unchecked Sendable {
     }
 
     func identify(userId: String, email: String?, name: String?, properties: [String: AtriyaValue]?) {
-        guard !isOptedOut else { return }
+        guard !isOptedOut, !options.anonymous else { return }
         self.userId = userId
         let payload = IdentifyPayload(apiKey: apiKey, userId: userId, email: email, name: name, properties: properties)
         Task { [transport] in _ = await transport.identify(payload) }
@@ -124,12 +138,17 @@ final class AtriyaClient: @unchecked Sendable {
 
     // MARK: - Setup
 
-    /// Restores events from an earlier launch, reports installs and updates,
+    /// Restores events from an earlier launch and reports installs and updates
+    /// – in anonymous mode it removes what earlier launches stored instead –,
     /// starts the flush timer and hooks into the app lifecycle and MetricKit.
     @MainActor
     func activate() {
-        queue.restore()
-        recordInstallOrUpdate()
+        if options.anonymous {
+            forgetStoredIdentity()
+        } else {
+            queue.restore()
+            recordInstallOrUpdate()
+        }
         startTimer()
         if options.trackAppLifecycle { observeLifecycle() }
         #if canImport(MetricKit)
@@ -144,6 +163,18 @@ final class AtriyaClient: @unchecked Sendable {
         }
         #endif
         Task { await queue.flush() }
+    }
+
+    /// Removes what a launch without anonymous mode left on the device: the
+    /// install and user ID, the last app version and the events waiting on
+    /// disk – they carry the install ID and are dropped, not sent.
+    private func forgetStoredIdentity() {
+        for key in [Keys.installId, Keys.userId, Keys.lastAppVersion] {
+            defaults.removeObject(forKey: key)
+        }
+        if let storeURL, FileManager.default.fileExists(atPath: storeURL.path) {
+            try? FileManager.default.removeItem(at: storeURL)
+        }
     }
 
     private func recordInstallOrUpdate() {
