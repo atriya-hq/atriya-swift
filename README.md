@@ -24,7 +24,7 @@ dashboard work for apps the same way as for websites.
    `Atriya` library to your app target. In a `Package.swift`:
 
    ```swift
-   .package(url: "https://github.com/atriya-hq/atriya-swift", from: "0.1.3")
+   .package(url: "https://github.com/atriya-hq/atriya-swift", from: "0.1.4")
    // in your target's dependencies:
    .product(name: "Atriya", package: "atriya-swift")
    ```
@@ -187,7 +187,10 @@ keeps the install ID, the user ID and the opt-out – in anonymous mode only the
 opt-out.
 
 `Atriya.optOut()` stops recording and is remembered across launches, also when
-called before `start`. Offer it as a switch in your app's settings.
+called before `start`. Offer it as a switch in your app's settings. Events
+recorded before it are dropped, not sent. If your app syncs its settings
+between devices, sync `Atriya.optOutKey` (a key in the standard user defaults)
+with them, and the opt-out applies on every device.
 
 ## Development
 

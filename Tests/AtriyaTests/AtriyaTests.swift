@@ -314,6 +314,58 @@ private func event(_ name: String, at date: Date = Date()) -> QueuedEvent {
         #expect(storedKeys(defaults) == ["io.atriya.optedOut"])
     }
 
+    @Test func theOptOutDropsWhatIsWaiting() async {
+        let transport = MockTransport()
+        let atriya = client(defaults: freshDefaults(), storeURL: nil, transport: transport)
+        atriya.record(type: "pageview", path: "/Settings")
+        atriya.record(type: "pageview", path: "/Privacy")
+        atriya.isOptedOut = true
+        #expect(atriya.queue.count == 0)
+        await atriya.queue.flush()
+        #expect(transport.batches.isEmpty)
+    }
+
+    @Test func anOptOutSetElsewhereStopsSending() async {
+        // Set by the app in the user defaults, e.g. synced from another device.
+        let defaults = freshDefaults()
+        let transport = MockTransport()
+        let atriya = client(defaults: defaults, storeURL: nil, transport: transport)
+        atriya.record(type: "event", name: "waiting")
+        defaults.set(true, forKey: Atriya.optOutKey)
+        await atriya.queue.flush()
+        #expect(transport.batches.isEmpty)
+        #expect(atriya.queue.count == 0)
+    }
+
+    @Test func theOptOutAlsoEmptiesTheQueueOnDisk() {
+        let defaults = freshDefaults()
+        let url = storeURL()
+        let atriya = client(defaults: defaults, storeURL: url, anonymous: false)
+        atriya.record(type: "event", name: "waiting")
+        atriya.queue.persist()
+        #expect(FileManager.default.fileExists(atPath: url.path))
+        atriya.isOptedOut = true
+        #expect(!FileManager.default.fileExists(atPath: url.path))
+
+        // Events written by a launch before the opt-out don't come back either.
+        let earlier = EventQueue(apiKey: "k", context: .test, transport: MockTransport(), storeURL: url)
+        earlier.enqueue(event("earlier"))
+        earlier.persist()
+        let next = client(defaults: defaults, storeURL: url, anonymous: false)
+        next.queue.restore()
+        #expect(next.queue.count == 0)
+        #expect(!FileManager.default.fileExists(atPath: url.path))
+    }
+
+    @Test func requestsKeepNoCookiesOrCache() {
+        let configuration = HTTPTransport.session.configuration
+        #expect(configuration.httpCookieStorage == nil)
+        #expect(configuration.httpShouldSetCookies == false)
+        #expect(configuration.httpCookieAcceptPolicy == .never)
+        #expect(configuration.urlCache == nil)
+        #expect(HTTPTransport(baseURL: URL(string: "http://localhost")!).session === HTTPTransport.session)
+    }
+
     @Test func batchesSayTheyAreAnonymousAndCarryNoIDs() async throws {
         let transport = MockTransport()
         let atriya = client(defaults: freshDefaults(), storeURL: nil, transport: transport)

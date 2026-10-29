@@ -24,7 +24,19 @@ protocol EventTransport: Sendable {
 
 struct HTTPTransport: EventTransport {
     let baseURL: URL
-    var session: URLSession = .shared
+    var session: URLSession = HTTPTransport.session
+
+    /// Keeps nothing between requests – no cookies, no cache, nothing shared
+    /// with the app's own requests: the backend needs none of it, and nothing
+    /// should tie one batch to the next (a cookie set by a proxy, say).
+    static let session: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpCookieAcceptPolicy = .never
+        configuration.httpShouldSetCookies = false
+        configuration.httpCookieStorage = nil
+        configuration.urlCache = nil
+        return URLSession(configuration: configuration)
+    }()
 
     func send(_ batch: WireBatch) async -> DeliveryResult {
         await post("api/ingest/v1/events", body: batch)

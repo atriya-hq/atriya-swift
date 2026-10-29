@@ -21,6 +21,7 @@ final class EventQueue: @unchecked Sendable {
     private let transport: EventTransport
     private let storeURL: URL?
     private let anonymous: Bool
+    private let isOptedOut: @Sendable () -> Bool
     private let now: @Sendable () -> Date
 
     private struct Entry: Codable {
@@ -34,6 +35,7 @@ final class EventQueue: @unchecked Sendable {
         transport: EventTransport,
         storeURL: URL?,
         anonymous: Bool = false,
+        isOptedOut: @escaping @Sendable () -> Bool = { false },
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.apiKey = apiKey
@@ -41,6 +43,7 @@ final class EventQueue: @unchecked Sendable {
         self.transport = transport
         self.storeURL = storeURL
         self.anonymous = anonymous
+        self.isOptedOut = isOptedOut
         self.now = now
     }
 
@@ -62,7 +65,8 @@ final class EventQueue: @unchecked Sendable {
 
     /// Sends everything queued, batch by batch. Stops early when the backend
     /// can't be reached; the remaining events stay queued. Concurrent calls
-    /// return immediately while a flush is running.
+    /// return immediately while a flush is running. After an opt-out it
+    /// sends nothing and drops what is waiting.
     func flush() async {
         let started = lock.withLock { () -> Bool in
             if isFlushing { return false }
@@ -73,6 +77,13 @@ final class EventQueue: @unchecked Sendable {
         defer { lock.withLock { isFlushing = false } }
 
         while true {
+            // Checked before every batch: the opt-out can come while sending,
+            // or be set in the user defaults by the app (e.g. synced from
+            // another device) without going through the client.
+            if isOptedOut() {
+                clear()
+                return
+            }
             let batch = lock.withLock { Array(events.prefix(Self.batchLimit)) }
             guard !batch.isEmpty else { return }
             let body = WireBatch(
@@ -88,9 +99,18 @@ final class EventQueue: @unchecked Sendable {
         }
     }
 
-    /// Writes the queue to disk, or removes the file when nothing is pending.
+    /// Drops everything waiting, in memory and on disk – after an opt-out,
+    /// nothing recorded before it goes out either.
+    func clear() {
+        lock.withLock { events.removeAll() }
+        persist()
+    }
+
+    /// Writes the queue to disk, or removes the file when nothing is pending
+    /// – also after an opt-out.
     func persist() {
         guard let storeURL else { return }
+        if isOptedOut() { lock.withLock { events.removeAll() } }
         let snapshot = lock.withLock { events }
         do {
             if snapshot.isEmpty {
@@ -105,11 +125,12 @@ final class EventQueue: @unchecked Sendable {
         }
     }
 
-    /// Loads events persisted by an earlier launch and deletes the file.
+    /// Loads events persisted by an earlier launch and deletes the file. After
+    /// an opt-out they are only deleted.
     func restore() {
         guard let storeURL, let data = try? Data(contentsOf: storeURL) else { return }
         try? FileManager.default.removeItem(at: storeURL)
-        guard let saved = try? JSONDecoder().decode([Entry].self, from: data) else { return }
+        guard !isOptedOut(), let saved = try? JSONDecoder().decode([Entry].self, from: data) else { return }
         lock.withLock {
             events.insert(contentsOf: saved, at: 0)
             if events.count > Self.maxStored {

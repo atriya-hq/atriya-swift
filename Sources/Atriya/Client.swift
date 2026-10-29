@@ -5,6 +5,11 @@ import UIKit
 import AppKit
 #endif
 
+/// `UserDefaults` is thread-safe, only not marked `Sendable`.
+private struct UncheckedDefaults: @unchecked Sendable {
+    let defaults: UserDefaults
+}
+
 /// The running SDK instance behind the static `Atriya` API.
 final class AtriyaClient: @unchecked Sendable {
     let apiKey: String
@@ -28,7 +33,7 @@ final class AtriyaClient: @unchecked Sendable {
     private enum Keys {
         static let installId = "io.atriya.installId"
         static let userId = "io.atriya.userId"
-        static let optedOut = "io.atriya.optedOut"
+        static let optedOut = Atriya.optOutKey
         static let lastAppVersion = "io.atriya.lastAppVersion"
     }
 
@@ -48,13 +53,15 @@ final class AtriyaClient: @unchecked Sendable {
         self.storeURL = storeURL
         let transport = transport ?? HTTPTransport(baseURL: baseURL)
         self.transport = transport
+        let optOut = UncheckedDefaults(defaults: defaults)
         self.queue = EventQueue(
             apiKey: apiKey,
             context: context,
             transport: transport,
             // Anonymous: events that couldn't be sent stay in memory only.
             storeURL: options.anonymous ? nil : storeURL,
-            anonymous: options.anonymous
+            anonymous: options.anonymous,
+            isOptedOut: { AtriyaClient.isOptedOut(in: optOut.defaults) }
         )
     }
 
@@ -86,11 +93,15 @@ final class AtriyaClient: @unchecked Sendable {
 
     var isOptedOut: Bool {
         get { Self.isOptedOut(in: defaults) }
-        set { Self.setOptedOut(newValue, in: defaults) }
+        set {
+            Self.setOptedOut(newValue, in: defaults)
+            // What was recorded before the opt-out doesn't go out after it.
+            if newValue { queue.clear() }
+        }
     }
 
-    /// The opt-out lives in the app's user defaults, so it holds across
-    /// launches and can be set before `Atriya.start`.
+    /// The opt-out lives in the app's user defaults (`Atriya.optOutKey`), so
+    /// it holds across launches and can be set before `Atriya.start`.
     static func isOptedOut(in defaults: UserDefaults) -> Bool {
         defaults.bool(forKey: Keys.optedOut)
     }

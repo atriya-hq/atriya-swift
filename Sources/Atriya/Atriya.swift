@@ -16,7 +16,7 @@ import os
 /// permission prompt is needed. With `Options.anonymous` nothing is kept on the
 /// device at all.
 public enum Atriya {
-    public static let sdkVersion = "0.1.3"
+    public static let sdkVersion = "0.1.4"
 
     public struct Options: Sendable {
         /// Records app opens and foreground time (`app_open`, `app_background`).
@@ -122,6 +122,12 @@ public enum Atriya {
     public static var isOptedOut: Bool {
         client?.isOptedOut ?? AtriyaClient.isOptedOut(in: .standard)
     }
+
+    /// Where the opt-out is kept in the standard user defaults. An app that
+    /// syncs its settings between devices (e.g. through iCloud's key-value
+    /// store) can sync this key too, so the opt-out applies on all of them:
+    /// Atriya reads it before recording and before sending.
+    public static let optOutKey = "io.atriya.optedOut"
 
     private static func setOptedOut(_ optedOut: Bool) {
         if let client {
